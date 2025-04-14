@@ -25,7 +25,7 @@ class CommandBuilder:
 
 
 class TCPClient(QObject):
-    data_received = pyqtSignal(str)
+    data_received = pyqtSignal(bytes)
 
     def __init__(self, host, port):
         super().__init__()
@@ -42,11 +42,16 @@ class TCPClient(QObject):
     def listen(self):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((self.host, self.port))
+        buffer = b""
         try:
             while self.running:
                 data = self.socket.recv(1024)
                 if data:
-                    self.data_received.emit(data.decode(errors='ignore'))
+                    buffer += data
+                    while len(buffer) >= 8:
+                        chunk = buffer[:8]
+                        buffer = buffer[8:]
+                        self.data_received.emit(chunk)
         finally:
             self.socket.close()
 
@@ -63,7 +68,7 @@ class TCPClient(QObject):
 class GoniometerControl(QWidget):
     def __init__(self):
         super().__init__()
-        self.client = TCPClient("127.0.0.1", 9000)
+        self.client = TCPClient("127.0.0.1", 2137)
         self.client.data_received.connect(self.handle_data)
         self.client.start()
 
@@ -115,15 +120,15 @@ class GoniometerControl(QWidget):
 
         self.x_input = QLineEdit()
         self.y_input = QLineEdit()
-        send_button = QPushButton("Wyślij kąty")
-        send_button.clicked.connect(self.send_angles)
+        self.send_button = QPushButton("Wyślij kąty")
+        self.send_button.clicked.connect(self.send_angles)
 
         input_layout = QHBoxLayout()
         input_layout.addWidget(QLabel("X:"))
         input_layout.addWidget(self.x_input)
         input_layout.addWidget(QLabel("Y:"))
         input_layout.addWidget(self.y_input)
-        input_layout.addWidget(send_button)
+        input_layout.addWidget(self.send_button)
         layout.addLayout(input_layout)
 
         self.up_btn = QPushButton("Góra")
@@ -164,13 +169,14 @@ class GoniometerControl(QWidget):
         enabled = self.dir_mode.isChecked()
         for btn in [self.up_btn, self.down_btn, self.left_btn, self.right_btn]:
             btn.setEnabled(enabled)
+        self.send_button.setEnabled(not enabled)
 
-    def handle_data(self, data):
+    def handle_data(self, data: bytes):
         try:
-            x_str, y_str = data.strip().split(',')
-            self.x_data.append(float(x_str))
-            self.y_data.append(float(y_str))
-        except ValueError:
+            x, y = struct.unpack('II', data)
+            self.x_data.append(x)
+            self.y_data.append(y)
+        except struct.error:
             pass
 
     def update_plot(self):
