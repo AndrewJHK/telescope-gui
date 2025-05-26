@@ -4,9 +4,9 @@ import threading
 import struct
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout,
-    QHBoxLayout, QRadioButton, QButtonGroup, QLineEdit, QLabel
+    QHBoxLayout, QRadioButton, QButtonGroup, QLineEdit, QLabel, QGraphicsView, QGraphicsScene, QGraphicsEllipseItem
 )
-from PyQt6.QtCore import pyqtSignal, pyqtSlot, QObject, QTimer
+from PyQt6.QtCore import pyqtSignal, pyqtSlot, QObject, QTimer, Qt
 import pyqtgraph as pg
 
 
@@ -65,6 +65,50 @@ class TCPClient(QObject):
             self.socket.close()
 
 
+class JoystickWidget(QGraphicsView):
+    def __init__(self, on_move_callback):
+        super().__init__()
+        self.setFixedSize(150, 150)
+        self.scene = QGraphicsScene(self)
+        self.setScene(self.scene)
+        self.on_move = on_move_callback
+
+        self.bounds = 100
+        self.radius = 10
+        self.joystick = QGraphicsEllipseItem(0, 0, self.radius*2, self.radius*2)
+        self.joystick.setBrush(Qt.GlobalColor.blue)
+        self.scene.addEllipse(0, 0, self.bounds, self.bounds)
+        self.scene.addItem(self.joystick)
+        self.setMouseTracking(True)
+        self.center = self.bounds / 2
+        self.reset_position()
+        self.mouse_pressed = False
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.mouse_pressed = True
+
+    def mouseMoveEvent(self, event):
+        if not self.mouse_pressed:
+            return
+        pos = self.mapToScene(event.pos())
+        dx = pos.x() - self.center
+        dy = pos.y() - self.center
+        max_dist = self.bounds / 2 - self.radius
+        dx = max(-max_dist, min(max_dist, dx))
+        dy = max(-max_dist, min(max_dist, dy))
+        self.joystick.setPos(self.center + dx - self.radius, self.center + dy - self.radius)
+        self.on_move(dx / max_dist, dy / max_dist)
+
+    def mouseReleaseEvent(self, event):
+        self.mouse_pressed = False
+        self.reset_position()
+        self.on_move(0, 0)
+
+    def reset_position(self):
+        self.joystick.setPos(self.center - self.radius, self.center - self.radius)
+
+
 class GoniometerControl(QWidget):
     def __init__(self):
         super().__init__()
@@ -105,6 +149,10 @@ class GoniometerControl(QWidget):
         self.reset_button.clicked.connect(self.reset_plot)
         layout.addWidget(self.reset_button)
 
+        self.home_button = QPushButton("Pozycja początkowa")
+        self.home_button.clicked.connect(self.go_home_position)
+        layout.addWidget(self.home_button)
+
         self.mode_group = QButtonGroup(self)
         self.angle_mode = QRadioButton("Sterowanie kątem")
         self.dir_mode = QRadioButton("Sterowanie kierunkowe")
@@ -142,6 +190,10 @@ class GoniometerControl(QWidget):
         nav_layout.addWidget(self.up_btn)
         nav_layout.addWidget(self.down_btn)
         layout.addLayout(nav_layout)
+
+        self.joystick = JoystickWidget(self.handle_joystick_move)
+        layout.addWidget(QLabel("Joystick sterowania"))
+        layout.addWidget(self.joystick)
 
         self.setLayout(layout)
 
@@ -196,6 +248,14 @@ class GoniometerControl(QWidget):
                 self.client.send(cmd)
             except ValueError:
                 pass
+
+    def go_home_position(self):
+        cmd = CommandBuilder.build_goto_command(0.0, 0.0)
+        self.client.send(cmd)
+
+    def handle_joystick_move(self, norm_x, norm_y):
+        if self.dir_mode.isChecked():
+            pass
 
     def closeEvent(self, event):
         self.client.stop()
