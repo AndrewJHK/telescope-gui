@@ -3,14 +3,6 @@ from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QHBoxLayout, QVB
 from control_panel import ControlPanel
 from settings_panel import SettingsPanel
 
-"""
-
-******* presety do PIDa i innych takich (DŻEJSON NAJLEPIEJ) ********
-Model musi być dokładny i obszerny (wykresy o trajektorii, GOTO itd.)
-Opis ramek danych do raportu
-
-"""
-
 
 class MainWindow(QWidget):
     def __init__(self):
