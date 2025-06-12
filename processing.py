@@ -19,15 +19,14 @@ class CommandBuilder:
 
     @staticmethod
     def build_config_packet(px, ix, dx, py, iy, dy, max_x, max_y, tol_x, tol_y) -> bytes:
-        return struct.pack('B 10f', 4, px, ix, dx, py, iy, dy, max_x, max_y, tol_x, tol_y)
+        return struct.pack('B10f', 4, px, ix, dx, py, iy, dy, max_x, max_y, tol_x, tol_y)
 
     @staticmethod
     def build_trajectory_command(coeffs_x, coeffs_y):
         if len(coeffs_x) != 5 or len(coeffs_y) != 5:
             raise ValueError("Wymagane dokładnie 5 współczynników dla każdej osi")
 
-        payload = struct.pack('10f', *(coeffs_x + coeffs_y))
-        return b'T' + payload
+        return struct.pack('B10f', *(coeffs_x + coeffs_y))
 
 
 class TCPClient(QObject):
