@@ -138,23 +138,23 @@ class ControlPanel(QWidget):
         self.send_traj_button.clicked.connect(self.send_trajectory)
 
         traj_layout = QVBoxLayout()
-        traj_layout.addWidget(QLabel("X(t) = a₀ + a₁·t + a₂·t² + a₃·t³ + a₄·t⁴"))
+        traj_layout.addWidget(QLabel("X(t) = a₄·t⁴ +  a₃·t³ + a₂·t² + a₁·t + a₀"))
         traj_x = QVBoxLayout()
         labels_x = QHBoxLayout()
         inputs_x = QHBoxLayout()
         for i, edit in enumerate(self.coeff_inputs_x):
-            labels_x.addWidget(QLabel(f"a{i}"))
+            labels_x.addWidget(QLabel(f"a{4-i}"))
             inputs_x.addWidget(edit)
         traj_x.addLayout(labels_x)
         traj_x.addLayout(inputs_x)
         traj_layout.addLayout(traj_x)
 
-        traj_layout.addWidget(QLabel("Y(t) = b₀ + b₁·t + b₂·t² + b₃·t³ + b₄·t⁴"))
+        traj_layout.addWidget(QLabel("Y(t) = b₄·t⁴ +  b₃·t³ + b₂·t² + b₁·t + b₀"))
         traj_y = QVBoxLayout()
         labels_y = QHBoxLayout()
         inputs_y = QHBoxLayout()
         for i, edit in enumerate(self.coeff_inputs_y):
-            labels_y.addWidget(QLabel(f"b{i}"))
+            labels_y.addWidget(QLabel(f"b{4-i}"))
             inputs_y.addWidget(edit)
         traj_y.addLayout(labels_y)
         traj_y.addLayout(inputs_y)
