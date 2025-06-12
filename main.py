@@ -5,12 +5,6 @@ from settings_panel import SettingsPanel
 
 """
 
-Okrągły joystick, przełączalne tryby sterowania (znikanie tych nie używanych)
-Graficzne ułożenie
-Wielomiany
-zapis do csvki
-punkt zadany na wykresie dobrze by było też trajektorie
-informacja o zakończonym ruchu (pop up) 
 ******* presety do PIDa i innych takich (DŻEJSON NAJLEPIEJ) ********
 Model musi być dokładny i obszerny (wykresy o trajektorii, GOTO itd.)
 Opis ramek danych do raportu
@@ -22,7 +16,6 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Goniometr - GUI")
-        self.resize(900, 600)
 
         self.stack = QStackedWidget()
         self.control_panel = ControlPanel()
@@ -34,8 +27,12 @@ class MainWindow(QWidget):
         self.control_btn = QPushButton("Sterowanie")
         self.settings_btn = QPushButton("Ustawienia")
 
-        self.control_btn.clicked.connect(lambda: self.stack.setCurrentWidget(self.control_panel))
-        self.settings_btn.clicked.connect(lambda: self.stack.setCurrentWidget(self.settings_panel))
+        self.control_btn.setCheckable(True)
+        self.settings_btn.setCheckable(True)
+        self.control_btn.setChecked(True)
+
+        self.control_btn.clicked.connect(self.show_control_panel)
+        self.settings_btn.clicked.connect(self.show_settings_panel)
 
         button_layout = QVBoxLayout()
         button_layout.addWidget(self.control_btn)
@@ -48,9 +45,19 @@ class MainWindow(QWidget):
 
         self.setLayout(main_layout)
 
+    def show_control_panel(self):
+        self.stack.setCurrentWidget(self.control_panel)
+        self.control_btn.setChecked(True)
+        self.settings_btn.setChecked(False)
+
+    def show_settings_panel(self):
+        self.stack.setCurrentWidget(self.settings_panel)
+        self.settings_btn.setChecked(True)
+        self.control_btn.setChecked(False)
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())

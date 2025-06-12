@@ -1,0 +1,12 @@
+{
+    "p_x": "1",
+    "i_x": "2",
+    "d_x": "3",
+    "p_y": "4",
+    "i_y": "5",
+    "d_y": "6",
+    "max_speed_x": "2",
+    "max_speed_y": "2",
+    "tolerance_x": "0.01",
+    "tolerance_y": "0.01"
+}

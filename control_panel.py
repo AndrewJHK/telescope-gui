@@ -1,31 +1,45 @@
 import struct
+import csv
+import time
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout,
-    QRadioButton, QButtonGroup, QGraphicsView, QGraphicsScene, QGraphicsEllipseItem
+    QRadioButton, QButtonGroup, QGraphicsView, QGraphicsScene, QGraphicsEllipseItem,
+    QGridLayout, QStackedLayout, QFileDialog
 )
 from PyQt6.QtCore import Qt, QTimer
 import pyqtgraph as pg
+from math import sqrt
 from processing import CommandBuilder, tcp_client
 
 
 class JoystickWidget(QGraphicsView):
     def __init__(self, on_move_callback):
         super().__init__()
-        self.setFixedSize(150, 150)
+        self.setFixedSize(300, 300)
+
         self.scene = QGraphicsScene(self)
         self.setScene(self.scene)
+
         self.on_move = on_move_callback
 
-        self.bounds = 100
-        self.radius = 10
+        self.bounds = 250
+        self.radius = 15
+        self.center = self.width() / 2
+
+        self.scene.addEllipse(
+            self.center - self.bounds / 2,
+            self.center - self.bounds / 2,
+            self.bounds,
+            self.bounds
+        )
+
         self.joystick = QGraphicsEllipseItem(0, 0, self.radius * 2, self.radius * 2)
         self.joystick.setBrush(Qt.GlobalColor.blue)
-        self.scene.addEllipse(0, 0, self.bounds, self.bounds)
         self.scene.addItem(self.joystick)
+
         self.setMouseTracking(True)
-        self.center = self.bounds / 2
-        self.reset_position()
         self.mouse_pressed = False
+        self.reset_position()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -34,12 +48,18 @@ class JoystickWidget(QGraphicsView):
     def mouseMoveEvent(self, event):
         if not self.mouse_pressed:
             return
+
         pos = self.mapToScene(event.pos())
         dx = pos.x() - self.center
         dy = pos.y() - self.center
+
         max_dist = self.bounds / 2 - self.radius
-        dx = max(-max_dist, min(max_dist, dx))
-        dy = max(-max_dist, min(max_dist, dy))
+        dist = sqrt(dx ** 2 + dy ** 2)
+        if dist > max_dist:
+            scale = max_dist / dist
+            dx *= scale
+            dy *= scale
+
         self.joystick.setPos(self.center + dx - self.radius, self.center + dy - self.radius)
         self.on_move(dx / max_dist, dy / max_dist)
 
@@ -60,6 +80,8 @@ class ControlPanel(QWidget):
 
         self.x_data = []
         self.y_data = []
+        self.x_setpoint = []
+        self.y_setpoint = []
 
         self.direction_map = {"UP": 0, "DOWN": 1, "LEFT": 2, "RIGHT": 3}
 
@@ -73,37 +95,111 @@ class ControlPanel(QWidget):
         layout = QVBoxLayout()
 
         self.graph_x = pg.PlotWidget(title="Pozycja X")
-        self.curve_x = self.graph_x.plot()
-        layout.addWidget(self.graph_x)
+        self.curve_x = self.graph_x.plot(pen='b')
+        self.curve_x_setpoint = self.graph_x.plot(pen='r', symbol='x')
+        layout.addWidget(self.graph_x, stretch=2)
 
         self.graph_y = pg.PlotWidget(title="Pozycja Y")
-        self.curve_y = self.graph_y.plot()
-        layout.addWidget(self.graph_y)
+        self.curve_y = self.graph_y.plot(pen='b')
+        self.curve_y_setpoint = self.graph_y.plot(pen='r', symbol='x')
+        layout.addWidget(self.graph_y, stretch=2)
+
+        self.up_btn = QPushButton("↑")
+        self.down_btn = QPushButton("↓")
+        self.left_btn = QPushButton("←")
+        self.right_btn = QPushButton("→")
+
+        for btn in [self.up_btn, self.down_btn, self.left_btn, self.right_btn]:
+            btn.setFixedSize(80, 80)
+
+        nav_grid = QGridLayout()
+        nav_grid.addWidget(self.up_btn, 0, 1)
+        nav_grid.addWidget(self.left_btn, 1, 0)
+        nav_grid.addWidget(self.right_btn, 1, 2)
+        nav_grid.addWidget(self.down_btn, 2, 1)
+
+        self.nav_widget = QWidget()
+        self.nav_widget.setLayout(nav_grid)
+
+        joystick_and_buttons = QWidget()
+        joystick_layout = QHBoxLayout()
+        self.joystick = JoystickWidget(self.handle_joystick_move)
+        joystick_layout.addWidget(self.joystick)
+        joystick_layout.addWidget(self.nav_widget)
+        joystick_and_buttons.setLayout(joystick_layout)
+
+        self.placeholder_widget = QWidget()
+        self.placeholder_widget.setFixedSize(300, 300)
+
+        # trajektoria widget
+        self.coeff_inputs_x = [QLineEdit() for _ in range(5)]
+        self.coeff_inputs_y = [QLineEdit() for _ in range(5)]
+        self.send_traj_button = QPushButton("Zadaj trajektorię")
+        self.send_traj_button.clicked.connect(self.send_trajectory)
+
+        traj_layout = QVBoxLayout()
+        traj_layout.addWidget(QLabel("X(t) = a₀ + a₁·t + a₂·t² + a₃·t³ + a₄·t⁴"))
+        traj_x = QVBoxLayout()
+        labels_x = QHBoxLayout()
+        inputs_x = QHBoxLayout()
+        for i, edit in enumerate(self.coeff_inputs_x):
+            labels_x.addWidget(QLabel(f"a{i}"))
+            inputs_x.addWidget(edit)
+        traj_x.addLayout(labels_x)
+        traj_x.addLayout(inputs_x)
+        traj_layout.addLayout(traj_x)
+
+        traj_layout.addWidget(QLabel("Y(t) = b₀ + b₁·t + b₂·t² + b₃·t³ + b₄·t⁴"))
+        traj_y = QVBoxLayout()
+        labels_y = QHBoxLayout()
+        inputs_y = QHBoxLayout()
+        for i, edit in enumerate(self.coeff_inputs_y):
+            labels_y.addWidget(QLabel(f"b{i}"))
+            inputs_y.addWidget(edit)
+        traj_y.addLayout(labels_y)
+        traj_y.addLayout(inputs_y)
+        traj_layout.addLayout(traj_y)
+
+        traj_layout.addWidget(self.send_traj_button)
+
+        self.traj_widget = QWidget()
+        self.traj_widget.setLayout(traj_layout)
+
+        self.left_stack = QStackedLayout()
+        self.left_stack.addWidget(joystick_and_buttons)
+        self.left_stack.addWidget(self.placeholder_widget)
+        self.left_stack.addWidget(self.traj_widget)
+
+        self.left_widget = QWidget()
+        self.left_widget.setLayout(self.left_stack)
+
+        control_box = QVBoxLayout()
 
         self.reset_button = QPushButton("Resetuj wykres")
         self.reset_button.clicked.connect(self.reset_plot)
-        layout.addWidget(self.reset_button)
+        control_box.addWidget(self.reset_button)
 
-        self.home_button = QPushButton("Pozycja początkowa")
+        self.home_button = QPushButton("Powrót do pozycji początkowej")
         self.home_button.clicked.connect(self.go_home_position)
-        layout.addWidget(self.home_button)
+        control_box.addWidget(self.home_button)
+
+        self.save_button = QPushButton("Zapisz dane do CSV")
+        self.save_button.clicked.connect(self.save_to_csv)
+        control_box.addWidget(self.save_button)
 
         self.mode_group = QButtonGroup(self)
-        self.angle_mode = QRadioButton("Sterowanie kątem")
+        self.angle_mode = QRadioButton("Sterowanie GOTO")
         self.dir_mode = QRadioButton("Sterowanie kierunkowe")
+        self.traj_mode = QRadioButton("Sterowanie trajektorią")
         self.angle_mode.setChecked(True)
-        self.mode_group.addButton(self.angle_mode)
-        self.mode_group.addButton(self.dir_mode)
-        self.dir_mode.toggled.connect(self.update_nav_buttons_state)
-
-        mode_layout = QHBoxLayout()
-        mode_layout.addWidget(self.angle_mode)
-        mode_layout.addWidget(self.dir_mode)
-        layout.addLayout(mode_layout)
+        for btn in [self.angle_mode, self.dir_mode, self.traj_mode]:
+            self.mode_group.addButton(btn)
+            control_box.addWidget(btn)
+            btn.toggled.connect(self.update_nav_buttons_state)
 
         self.x_input = QLineEdit()
         self.y_input = QLineEdit()
-        self.send_button = QPushButton("Wyślij kąty")
+        self.send_button = QPushButton("Zadaj punkt")
         self.send_button.clicked.connect(self.send_angles)
 
         input_layout = QHBoxLayout()
@@ -112,24 +208,22 @@ class ControlPanel(QWidget):
         input_layout.addWidget(QLabel("Y:"))
         input_layout.addWidget(self.y_input)
         input_layout.addWidget(self.send_button)
-        layout.addLayout(input_layout)
 
-        self.up_btn = QPushButton("Góra")
-        self.down_btn = QPushButton("Dół")
-        self.left_btn = QPushButton("Lewo")
-        self.right_btn = QPushButton("Prawo")
+        self.goto_inputs_widget = QWidget()
+        self.goto_inputs_widget.setLayout(input_layout)
+        control_box.addWidget(self.goto_inputs_widget)
 
-        nav_layout = QHBoxLayout()
-        nav_layout.addWidget(self.left_btn)
-        nav_layout.addWidget(self.right_btn)
-        nav_layout.addWidget(self.up_btn)
-        nav_layout.addWidget(self.down_btn)
-        layout.addLayout(nav_layout)
+        control_box.addStretch()
 
-        self.joystick = JoystickWidget(self.handle_joystick_move)
-        layout.addWidget(QLabel("Joystick sterowania"))
-        layout.addWidget(self.joystick)
+        control_container = QWidget()
+        control_container.setLayout(control_box)
+        control_container.setMinimumWidth(960)
 
+        bottom_layout = QHBoxLayout()
+        bottom_layout.addWidget(self.left_widget)
+        bottom_layout.addWidget(control_container)
+
+        layout.addLayout(bottom_layout)
         self.setLayout(layout)
 
         self.setup_navigation_buttons()
@@ -152,10 +246,22 @@ class ControlPanel(QWidget):
             btn.released.connect(stop_move)
 
     def update_nav_buttons_state(self):
-        enabled = self.dir_mode.isChecked()
+        is_dir = self.dir_mode.isChecked()
+        is_goto = self.angle_mode.isChecked()
+        is_traj = self.traj_mode.isChecked()
+
+        if is_dir:
+            self.left_stack.setCurrentIndex(0)
+        elif is_goto:
+            self.left_stack.setCurrentIndex(1)
+        else:
+            self.left_stack.setCurrentIndex(2)
+
         for btn in [self.up_btn, self.down_btn, self.left_btn, self.right_btn]:
-            btn.setEnabled(enabled)
-        self.send_button.setEnabled(not enabled)
+            btn.setEnabled(is_dir)
+        self.send_button.setEnabled(is_goto)
+        self.goto_inputs_widget.setVisible(is_goto)
+        self.send_traj_button.setEnabled(is_traj)
 
     def handle_data(self, data: bytes):
         try:
@@ -168,10 +274,14 @@ class ControlPanel(QWidget):
     def update_plot(self):
         self.curve_x.setData(self.x_data)
         self.curve_y.setData(self.y_data)
+        self.curve_x_setpoint.setData(self.x_setpoint)
+        self.curve_y_setpoint.setData(self.y_setpoint)
 
     def reset_plot(self):
         self.x_data.clear()
         self.y_data.clear()
+        self.x_setpoint.clear()
+        self.y_setpoint.clear()
 
     def send_angles(self):
         if self.angle_mode.isChecked():
@@ -180,12 +290,44 @@ class ControlPanel(QWidget):
                 y = float(self.y_input.text())
                 cmd = CommandBuilder.build_goto_command(x, y)
                 self.client.send(cmd)
+                self.x_setpoint.append(x)
+                self.y_setpoint.append(y)
             except ValueError:
                 pass
 
     def go_home_position(self):
         cmd = CommandBuilder.build_goto_command(0.0, 0.0)
         self.client.send(cmd)
+
+    def save_to_csv(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Zapisz dane do CSV", "dane.csv", "CSV Files (*.csv)")
+        if not file_path:
+            return
+        try:
+            with open(file_path, "w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(["czas (s)", "index", "x", "y"])
+                start_time = time.time()
+                for i, (x, y) in enumerate(zip(self.x_data, self.y_data)):
+                    t = round(time.time() - start_time, 3)
+                    writer.writerow([t, i, x, y])
+            print(f"Dane zapisane do {file_path}")
+        except Exception as e:
+            print(f"Błąd zapisu CSV: {e}")
+
+    def send_trajectory(self):
+        try:
+            coeffs_x = [float(e.text()) for e in self.coeff_inputs_x]
+            coeffs_y = [float(e.text()) for e in self.coeff_inputs_y]
+            cmd = CommandBuilder.build_trajectory_command(coeffs_x, coeffs_y)
+            self.client.send(cmd)
+            x_final = sum(c * (1.0 ** i) for i, c in enumerate(coeffs_x))
+            y_final = sum(c * (1.0 ** i) for i, c in enumerate(coeffs_y))
+            self.x_setpoint.append(x_final)
+            self.y_setpoint.append(y_final)
+            print("Trajektoria wysłana")
+        except ValueError:
+            print("Błędne współczynniki!")
 
     def handle_joystick_move(self, norm_x, norm_y):
         if self.dir_mode.isChecked():
