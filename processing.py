@@ -14,19 +14,23 @@ class CommandBuilder:
         return struct.pack('Bi', 3, direction_code)
 
     @staticmethod
+    def build_analog_manual_command(x: float, y: float) -> bytes:
+        return struct.pack('Bff', 4, x, y)
+
+    @staticmethod
     def build_stop_command() -> bytes:
         return struct.pack('B', 1)
 
     @staticmethod
     def build_config_packet(px, ix, dx, py, iy, dy, max_x, max_y, tol_x, tol_y) -> bytes:
-        return struct.pack('B10f', 4, px, ix, dx, py, iy, dy, max_x, max_y, tol_x, tol_y)
+        return struct.pack('B10f', 6, px, ix, dx, py, iy, dy, max_x, max_y, tol_x, tol_y)
 
     @staticmethod
     def build_trajectory_command(coeffs_x, coeffs_y):
         if len(coeffs_x) != 5 or len(coeffs_y) != 5:
             raise ValueError("Wymagane dokładnie 5 współczynników dla każdej osi")
 
-        return struct.pack('B10f', *(coeffs_x + coeffs_y))
+        return struct.pack('B10f', 5, *(coeffs_x + coeffs_y))
 
 
 class TCPClient(QObject):

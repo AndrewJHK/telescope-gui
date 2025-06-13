@@ -4,7 +4,7 @@ import time
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout,
     QRadioButton, QButtonGroup, QGraphicsView, QGraphicsScene, QGraphicsEllipseItem,
-    QGridLayout, QStackedLayout, QFileDialog
+    QGridLayout, QStackedLayout, QFileDialog, QSpacerItem, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer
 import pyqtgraph as pg
@@ -143,7 +143,7 @@ class ControlPanel(QWidget):
         labels_x = QHBoxLayout()
         inputs_x = QHBoxLayout()
         for i, edit in enumerate(self.coeff_inputs_x):
-            labels_x.addWidget(QLabel(f"a{4-i}"))
+            labels_x.addWidget(QLabel(f"a{4 - i}"))
             inputs_x.addWidget(edit)
         traj_x.addLayout(labels_x)
         traj_x.addLayout(inputs_x)
@@ -154,7 +154,7 @@ class ControlPanel(QWidget):
         labels_y = QHBoxLayout()
         inputs_y = QHBoxLayout()
         for i, edit in enumerate(self.coeff_inputs_y):
-            labels_y.addWidget(QLabel(f"b{4-i}"))
+            labels_y.addWidget(QLabel(f"b{4 - i}"))
             inputs_y.addWidget(edit)
         traj_y.addLayout(labels_y)
         traj_y.addLayout(inputs_y)
@@ -212,6 +212,13 @@ class ControlPanel(QWidget):
         self.goto_inputs_widget = QWidget()
         self.goto_inputs_widget.setLayout(input_layout)
         control_box.addWidget(self.goto_inputs_widget)
+
+        self.emergency_btn = QPushButton("⛔ EMERGENCY STOP ⛔")
+        self.emergency_btn.setStyleSheet("background-color: red; color: white; font-size: 18pt; font-weight: bold;")
+        self.emergency_btn.setFixedHeight(80)
+        self.emergency_btn.clicked.connect(self.send_emergency_stop)
+        control_box.addSpacerItem(QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+        control_box.addWidget(self.emergency_btn)
 
         control_box.addStretch()
 
@@ -299,6 +306,9 @@ class ControlPanel(QWidget):
         cmd = CommandBuilder.build_goto_command(0.0, 0.0)
         self.client.send(cmd)
 
+    def send_emergency_stop(self):
+        self.client.send(CommandBuilder.build_stop_command())
+
     def save_to_csv(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Zapisz dane do CSV", "dane.csv", "CSV Files (*.csv)")
         if not file_path:
@@ -331,7 +341,10 @@ class ControlPanel(QWidget):
 
     def handle_joystick_move(self, norm_x, norm_y):
         if self.dir_mode.isChecked():
-            pass
+            if abs(norm_x) < 0.01 and abs(norm_y) < 0.01:
+                self.client.send(CommandBuilder.build_stop_command())
+            else:
+                self.client.send(CommandBuilder.build_analog_manual_command(norm_x, norm_y))
 
     def closeEvent(self, event):
         self.client.stop()
